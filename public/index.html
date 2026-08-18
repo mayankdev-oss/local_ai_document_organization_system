@@ -17,8 +17,8 @@
                         sans: ['Inter', 'sans-serif'],
                     },
                     colors: {
-                        primary: '#1A1B41', // Dark blue sidebar
-                        secondary: '#6E56CF', // Purple accent
+                        primary: '#0F172A', // Deep slate for sidebar
+                        secondary: '#4F46E5', // Elegant indigo accent
                         background: '#F8FAFC',
                     }
                 }
@@ -78,7 +78,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         Customers
                     </a>
-                    <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 hover:bg-white/10 transition">
+                    <a href="#" @click.prevent="currentPath = '/documents'" :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         Documents
                     </a>
@@ -102,7 +102,7 @@
         <main class="flex-1 overflow-y-auto p-8">
             <header class="flex justify-between items-center mb-8">
                 <div>
-                    <h2 class="text-2xl font-bold" x-text="currentPath === '/' ? 'Welcome back, Admin 👋' : (currentPath === '/upload' ? 'Upload Document' : '')"></h2>
+                    <h2 class="text-2xl font-bold" x-text="currentPath === '/' ? 'Welcome back, Admin' : (currentPath === '/upload' ? 'Upload Document' : '')"></h2>
                     <p class="text-gray-500 text-sm" x-show="currentPath === '/'">Here's what's happening with your documents today.</p>
                 </div>
                 <div class="flex items-center gap-4">
@@ -229,6 +229,59 @@
                         
                         <div x-show="uploadError" class="text-red-500 text-sm mt-2 font-medium" x-text="uploadError"></div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Documents Content -->
+            <div x-show="currentPath === '/documents'" x-data="{ documents: [] }" x-init="$watch('currentPath', val => { if(val === '/documents') fetch('/api/documents').then(r => r.json()).then(d => documents = d) })" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 class="text-xl font-bold">Recent Documents</h3>
+                    <button @click="fetch('/api/documents').then(r => r.json()).then(d => documents = d)" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Refresh
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 font-medium">
+                            <tr>
+                                <th class="px-6 py-4">Document</th>
+                                <th class="px-6 py-4">Status</th>
+                                <th class="px-6 py-4">Type</th>
+                                <th class="px-6 py-4">Person</th>
+                                <th class="px-6 py-4">Customer</th>
+                                <th class="px-6 py-4">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="doc in documents" :key="doc.id">
+                                <tr class="hover:bg-gray-50 transition">
+                                    <td class="px-6 py-4">
+                                        <div class="font-medium text-gray-900" x-text="doc.original_name"></div>
+                                        <div class="text-xs text-gray-500" x-text="'ID: ' + doc.id"></div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize"
+                                              :class="{
+                                                  'bg-blue-100 text-blue-800': doc.status === 'uploaded',
+                                                  'bg-yellow-100 text-yellow-800': doc.status === 'reading',
+                                                  'bg-purple-100 text-purple-800': doc.status === 'identifying',
+                                                  'bg-green-100 text-green-800': doc.status === 'completed',
+                                                  'bg-red-100 text-red-800': doc.status === 'failed'
+                                              }" x-text="doc.status">
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-gray-500" x-text="doc.document_type || '-'"></td>
+                                    <td class="px-6 py-4 text-gray-500" x-text="doc.person_name || '-'"></td>
+                                    <td class="px-6 py-4 text-gray-900 font-medium" x-text="doc.customer_name || 'New'"></td>
+                                    <td class="px-6 py-4 text-gray-500" x-text="new Date(doc.created_at).toLocaleDateString()"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="documents == null || documents.length === 0">
+                                <td colspan="6" class="px-6 py-8 text-center text-gray-500">No documents found.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
