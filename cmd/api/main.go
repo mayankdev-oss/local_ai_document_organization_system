@@ -43,6 +43,8 @@ func main() {
 	protected.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("pong"))
 	}).Methods("GET")
+	protected.HandleFunc("/customers", handlers.GetCustomers).Methods("GET")
+	protected.HandleFunc("/documents/upload", handlers.UploadDocument).Methods("POST")
 
 	// Static files (Frontend)
 	r.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("./public"))))

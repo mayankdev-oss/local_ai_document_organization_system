@@ -141,7 +141,9 @@
             </div>
 
             <!-- Upload Content -->
-            <div x-show="currentPath === '/upload'" class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+            <div x-show="currentPath === '/upload'" 
+                 x-data="uploadForm()"
+                 class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
                 <div class="text-sm text-secondary font-medium mb-2">STEP 1 OF 2</div>
                 <h3 class="text-2xl font-bold mb-2">Upload a Document</h3>
                 <p class="text-gray-500 mb-8">We'll automatically read, classify and organize it for the right person.</p>
@@ -150,31 +152,82 @@
                     <div>
                         <div class="mb-4 font-medium">Who is this document for?</div>
                         <div class="grid grid-cols-2 gap-4">
-                            <button class="border-2 border-secondary rounded-xl p-4 flex flex-col items-start gap-2 relative bg-purple-50/50">
-                                <div class="absolute top-2 right-2 w-5 h-5 bg-secondary text-white rounded-full flex items-center justify-center text-xs">✓</div>
-                                <svg class="w-6 h-6 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                            <button @click="customerType = 'new'; selectedCustomer = null" 
+                                    :class="customerType === 'new' ? 'border-2 border-secondary bg-purple-50/50' : 'border hover:border-gray-300'"
+                                    class="rounded-xl p-4 flex flex-col items-start gap-2 relative">
+                                <div x-show="customerType === 'new'" class="absolute top-2 right-2 w-5 h-5 bg-secondary text-white rounded-full flex items-center justify-center text-xs">✓</div>
+                                <svg :class="customerType === 'new' ? 'text-secondary' : 'text-gray-400'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                                 <div class="text-left">
-                                    <div class="font-medium text-sm">New Customer</div>
+                                    <div class="font-medium text-sm" :class="customerType === 'new' ? 'text-gray-900' : 'text-gray-600'">New Customer</div>
                                     <div class="text-xs text-gray-500">Create folder automatically</div>
                                 </div>
                             </button>
-                            <button class="border rounded-xl p-4 flex flex-col items-start gap-2 hover:border-gray-300">
-                                <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            <button @click="customerType = 'existing'" 
+                                    :class="customerType === 'existing' ? 'border-2 border-secondary bg-purple-50/50' : 'border hover:border-gray-300'"
+                                    class="rounded-xl p-4 flex flex-col items-start gap-2 relative">
+                                <div x-show="customerType === 'existing'" class="absolute top-2 right-2 w-5 h-5 bg-secondary text-white rounded-full flex items-center justify-center text-xs">✓</div>
+                                <svg :class="customerType === 'existing' ? 'text-secondary' : 'text-gray-400'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                                 <div class="text-left">
-                                    <div class="font-medium text-sm">Existing Customer</div>
+                                    <div class="font-medium text-sm" :class="customerType === 'existing' ? 'text-gray-900' : 'text-gray-600'">Existing Customer</div>
                                     <div class="text-xs text-gray-500">Upload to existing folder</div>
                                 </div>
                             </button>
                         </div>
+                        
+                        <!-- Existing Customer Search -->
+                        <div x-show="customerType === 'existing'" class="mt-6 relative">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
+                            <input type="text" x-model="searchQuery" @input.debounce.300ms="searchCustomers" placeholder="Search by name..." class="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
+                            
+                            <!-- Dropdown -->
+                            <div x-show="customers.length > 0 && searchQuery.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                <template x-for="c in customers" :key="c.id">
+                                    <div @click="selectCustomer(c)" class="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-0">
+                                        <div class="font-medium text-sm" x-text="c.name"></div>
+                                        <div class="text-xs text-gray-500" x-text="c.id"></div>
+                                    </div>
+                                </template>
+                            </div>
+                            
+                            <!-- Selected Customer -->
+                            <div x-show="selectedCustomer" class="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                                <div>
+                                    <div class="text-sm font-medium text-green-800" x-text="selectedCustomer?.name"></div>
+                                    <div class="text-xs text-green-600" x-text="selectedCustomer?.id"></div>
+                                </div>
+                                <button @click="selectedCustomer = null; searchQuery = ''" class="text-green-600 hover:text-green-800">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div class="border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50 flex flex-col items-center justify-center p-8">
+                    <div class="border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50 flex flex-col items-center justify-center p-8 relative hover:bg-gray-100 transition" @dragover.prevent @drop.prevent="handleDrop">
+                        <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" accept=".pdf,.jpg,.jpeg,.png">
                         <div class="w-24 h-24 bg-purple-100 rounded-2xl mb-4 flex items-center justify-center">
                             <svg class="w-12 h-12 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         </div>
-                        <div class="font-bold text-lg mb-1">Drag & drop your file here</div>
-                        <div class="text-gray-500 text-sm mb-4">PDF, JPG, PNG or scanned documents</div>
-                        <button class="bg-secondary text-white px-6 py-2 rounded-lg font-medium hover:bg-opacity-90">Choose File</button>
+                        <div class="font-bold text-lg mb-1" x-text="file ? file.name : 'Drag & drop your file here'"></div>
+                        <div class="text-gray-500 text-sm mb-4" x-text="file ? (file.size/1024/1024).toFixed(2) + ' MB' : 'PDF, JPG, PNG or scanned documents'"></div>
+                        
+                        <div x-show="!uploading && !uploadSuccess" class="flex gap-2">
+                            <button @click="$refs.fileInput.click()" class="bg-white border border-gray-300 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-50 transition" x-show="!file">Choose File</button>
+                            <button @click="uploadFile" x-show="file" class="bg-secondary text-white px-6 py-2 rounded-lg font-medium hover:bg-opacity-90 transition" :disabled="customerType === 'existing' && !selectedCustomer">
+                                Upload Document
+                            </button>
+                        </div>
+                        
+                        <div x-show="uploading" class="flex items-center gap-2 text-secondary font-medium">
+                            <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            Uploading...
+                        </div>
+                        
+                        <div x-show="uploadSuccess" class="text-green-600 font-medium flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Upload Successful
+                        </div>
+                        
+                        <div x-show="uploadError" class="text-red-500 text-sm mt-2 font-medium" x-text="uploadError"></div>
                     </div>
                 </div>
             </div>
@@ -184,7 +237,6 @@
 
     <script>
         document.addEventListener('alpine:init', () => {
-            // Check auth status on load
             fetch('/api/ping').then(res => {
                 if (res.ok) {
                     Alpine.store('auth', { isAuthenticated: true })
@@ -204,6 +256,90 @@
                     this.error = "Invalid credentials";
                 }
             })
+        }
+        
+        function uploadForm() {
+            return {
+                customerType: 'new',
+                searchQuery: '',
+                customers: [],
+                selectedCustomer: null,
+                file: null,
+                uploading: false,
+                uploadSuccess: false,
+                uploadError: '',
+                
+                searchCustomers() {
+                    if (this.searchQuery.length < 2) {
+                        this.customers = [];
+                        return;
+                    }
+                    fetch(`/api/customers?q=${encodeURIComponent(this.searchQuery)}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            this.customers = data || [];
+                        })
+                },
+                
+                selectCustomer(c) {
+                    this.selectedCustomer = c;
+                    this.customers = [];
+                    this.searchQuery = '';
+                },
+                
+                handleDrop(e) {
+                    if (e.dataTransfer.files.length > 0) {
+                        this.file = e.dataTransfer.files[0];
+                    }
+                },
+                
+                handleFileSelect(e) {
+                    if (e.target.files.length > 0) {
+                        this.file = e.target.files[0];
+                    }
+                },
+                
+                uploadFile() {
+                    if (!this.file) return;
+                    if (this.customerType === 'existing' && !this.selectedCustomer) {
+                        this.uploadError = "Please select an existing customer";
+                        return;
+                    }
+                    
+                    this.uploading = true;
+                    this.uploadError = '';
+                    this.uploadSuccess = false;
+                    
+                    const formData = new FormData();
+                    formData.append('document', this.file);
+                    formData.append('customer_type', this.customerType);
+                    if (this.selectedCustomer) {
+                        formData.append('customer_id', this.selectedCustomer.id);
+                    }
+                    
+                    fetch('/api/documents/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => {
+                        if (res.ok) {
+                            this.uploadSuccess = true;
+                            this.file = null;
+                            setTimeout(() => {
+                                this.uploadSuccess = false;
+                            }, 3000);
+                        } else {
+                            res.text().then(text => this.uploadError = text);
+                        }
+                    })
+                    .catch(err => {
+                        this.uploadError = "Network error occurred";
+                    })
+                    .finally(() => {
+                        this.uploading = false;
+                    })
+                }
+            }
         }
     </script>
 </body>
