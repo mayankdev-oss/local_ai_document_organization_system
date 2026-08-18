@@ -152,7 +152,84 @@ func processOCR(docID int, filePath string) {
 	}
 	
 	fmt.Printf("Successfully completed OCR for document %d\n", docID)
-	// (Phase 4 will pick up from 'identifying' status)
+	
+	// Phase 4: Trigger AI Classification
+	go classifyDocumentWithAI(docID, result.Text)
+}
+
+func classifyDocumentWithAI(docID int, ocrText string) {
+	fmt.Printf("Starting AI classification for document %d\n", docID)
+	
+	prompt := fmt.Sprintf(`Extract the document type and person's name from the following OCR text.
+Return ONLY a valid JSON object with no markdown formatting and no extra text.
+Format: {"document_type": "...", "person_name": "..."}
+If you cannot find the name, use null.
+If you cannot determine the type, use "Unknown".
+
+OCR Text:
+%s`, ocrText)
+
+	requestBody, _ := json.Marshal(map[string]interface{}{
+		"model":  "qwen2.5",
+		"prompt": prompt,
+		"stream": false,
+		"format": "json", // Instruct Ollama to return JSON (works for newer models)
+	})
+
+	req, err := http.NewRequest("POST", "http://127.0.0.1:11434/api/generate", bytes.NewBuffer(requestBody))
+	if err != nil {
+		updateStatusAndError(docID, "failed", fmt.Sprintf("Failed to create AI request: %v", err))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		updateStatusAndError(docID, "failed", fmt.Sprintf("Failed to reach Ollama AI service: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		updateStatusAndError(docID, "failed", fmt.Sprintf("Ollama error: %s", string(respBody)))
+		return
+	}
+
+	var ollamaResp struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		updateStatusAndError(docID, "failed", fmt.Sprintf("Failed to decode Ollama response: %v", err))
+		return
+	}
+
+	// Parse the JSON string inside the response
+	var extractedData struct {
+		DocumentType string  `json:"document_type"`
+		PersonName   *string `json:"person_name"`
+	}
+	
+	// Try to unmarshal the response string
+	if err := json.Unmarshal([]byte(ollamaResp.Response), &extractedData); err != nil {
+		updateStatusAndError(docID, "failed", fmt.Sprintf("Failed to parse extracted JSON: %v. Raw: %s", err, ollamaResp.Response))
+		return
+	}
+
+	// Update database with extracted info
+	_, err = database.DB.Exec(`
+		UPDATE documents 
+		SET document_type = $1, person_name = $2, status = 'completed' 
+		WHERE id = $3
+	`, extractedData.DocumentType, extractedData.PersonName, docID)
+	
+	if err != nil {
+		fmt.Printf("Failed to update database with AI results for doc %d: %v\n", docID, err)
+		return
+	}
+	
+	fmt.Printf("Successfully classified document %d: Type=%s, Person=%v\n", docID, extractedData.DocumentType, extractedData.PersonName)
 }
 
 func updateStatusAndError(docID int, status, errMsg string) {
