@@ -31,15 +31,22 @@ func ConnectDB() error {
 		dbname = "postgres"
 	}
 
-	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+	psqlInfo := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname,
+		getEnvDB("DB_SSLMODE", "disable"), // set to 'require' or 'verify-full' in production
+	)
 
 	var err error
 	DB, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return err
 	}
+
+	// Connection pool configuration — prevents too many open connections
+	DB.SetMaxOpenConns(25)
+	DB.SetMaxIdleConns(5)
+	DB.SetConnMaxLifetime(5 * 60 * 1e9) // 5 minutes
 
 	err = DB.Ping()
 	if err != nil {
@@ -48,6 +55,13 @@ func ConnectDB() error {
 
 	log.Println("Successfully connected to the database")
 	return nil
+}
+
+func getEnvDB(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func InitSchema() error {
@@ -76,6 +90,8 @@ func InitSchema() error {
 		ocr_text TEXT,
 		document_type VARCHAR(100),
 		person_name VARCHAR(255),
+		dob VARCHAR(50),
+		document_id_number VARCHAR(100),
 		confidence FLOAT,
 		customer_id VARCHAR(50) REFERENCES customers(id),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -98,6 +114,10 @@ func InitSchema() error {
 	// Safely add user_id to existing tables (ignoring errors if columns already exist)
 	DB.Exec("ALTER TABLE customers ADD COLUMN user_id INT REFERENCES users(id)")
 	DB.Exec("ALTER TABLE documents ADD COLUMN user_id INT REFERENCES users(id)")
+
+	// Safely add dob and document_id_number to existing tables
+	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
+	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
 
 	log.Println("Database schema initialized")
 	return nil

@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"path/filepath"
 
 	"docunest/internal/database"
 	"docunest/internal/models"
@@ -17,13 +19,14 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := database.DB.Query(`
-		SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.confidence, d.created_at, c.name 
+		SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, c.name 
 		FROM documents d 
 		LEFT JOIN customers c ON d.customer_id = c.id 
 		WHERE d.user_id = $1
 		ORDER BY d.created_at DESC LIMIT 50
 	`, userID)
 	if err != nil {
+		log.Printf("Failed to fetch documents: %v", err)
 		http.Error(w, "Failed to fetch documents", http.StatusInternalServerError)
 		return
 	}
@@ -38,8 +41,8 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var doc DocumentWithCustomer
 		if err := rows.Scan(
-			&doc.ID, &doc.Filename, &doc.OriginalName, &doc.Status, 
-			&doc.DocumentType, &doc.PersonName, &doc.Confidence, &doc.CreatedAt, &doc.CustomerName,
+			&doc.ID, &doc.Filename, &doc.OriginalName, &doc.Status,
+			&doc.DocumentType, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.CustomerName,
 		); err != nil {
 			http.Error(w, "Failed to parse document", http.StatusInternalServerError)
 			return
@@ -48,9 +51,16 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if documents == nil {
+		documents = []DocumentWithCustomer{}
+	}
 	json.NewEncoder(w).Encode(documents)
 }
 
+// ViewDocument streams a document file to the browser after verifying ownership.
+// Files are served with Content-Disposition: inline to allow browser viewing,
+// but X-Content-Type-Options: nosniff is set via SecurityHeaders middleware
+// to prevent MIME sniffing of served content.
 func ViewDocument(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
@@ -61,12 +71,37 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	docID := vars["id"]
 
-	var filepath string
-	err := database.DB.QueryRow("SELECT filepath FROM documents WHERE id = $1 AND user_id = $2", docID, userID).Scan(&filepath)
+	// Fetch filepath and verify ownership in one query
+	var storedPath string
+	err := database.DB.QueryRow(
+		"SELECT filepath FROM documents WHERE id = $1 AND user_id = $2",
+		docID, userID,
+	).Scan(&storedPath)
 	if err != nil {
 		http.Error(w, "Document not found or access denied", http.StatusNotFound)
 		return
 	}
 
-	http.ServeFile(w, r, filepath)
+	// Sanitize path: resolve to absolute and ensure it stays within uploads dir
+	absPath, err := filepath.Abs(storedPath)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	absUploads, err := filepath.Abs("./uploads")
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Reject any path that doesn't begin with the uploads directory
+	if len(absPath) <= len(absUploads) || absPath[:len(absUploads)] != absUploads {
+		log.Printf("Path traversal attempt detected for doc %s: resolved to %s", docID, absPath)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Serve inline for browser preview; X-Content-Type-Options is set by middleware
+	w.Header().Set("Content-Disposition", "inline")
+	http.ServeFile(w, r, absPath)
 }

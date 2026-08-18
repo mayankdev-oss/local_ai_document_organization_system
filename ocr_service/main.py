@@ -1,18 +1,19 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 import uvicorn
-import os
-import easyocr
-import fitz  # PyMuPDF
-from PIL import Image
 import io
-import numpy as np
+import pymupdf as fitz  # PyMuPDF
+from PIL import Image, ImageFilter
+import pytesseract
 
 app = FastAPI()
 
-# Initialize the EasyOCR reader (this runs once when the server starts)
-print("Initializing EasyOCR Model (this may take a moment to load PyTorch)...")
-reader = easyocr.Reader(['en'], gpu=False) # Use gpu=False for compatibility, change to True if you have CUDA installed
-print("EasyOCR Model Loaded!")
+# On Windows, Tesseract is installed to this path by default via the UB Mannheim installer.
+# On Linux/Docker (production), this line is not needed — tesseract is on PATH.
+import platform
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 
 @app.post("/api/ocr")
 async def process_document(file: UploadFile = File(...)):
@@ -25,44 +26,54 @@ async def process_document(file: UploadFile = File(...)):
 
     try:
         if filename.endswith('.pdf'):
-            # Parse PDF using PyMuPDF (fitz)
             pdf_document = fitz.open(stream=content, filetype="pdf")
+
             for page_num in range(len(pdf_document)):
                 page = pdf_document.load_page(page_num)
-                # Render page to an image (pixmap)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 2x zoom for better OCR
-                # Convert pixmap to numpy array for easyocr
-                img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-                
-                # If image has an alpha channel, remove it
-                if pix.n == 4:
-                    img_array = img_array[:, :, :3]
-                
-                # Read text using easyocr
-                results = reader.readtext(img_array)
-                for bbox, text, prob in results:
-                    extracted_text.append(text)
-            
-            pdf_document.close()
-            
-        else:
-            # Parse image (PNG/JPG) using Pillow and Numpy
-            image = Image.open(io.BytesIO(content)).convert('RGB')
-            img_array = np.array(image)
-            
-            # Read text using easyocr
-            results = reader.readtext(img_array)
-            for bbox, text, prob in results:
-                extracted_text.append(text)
-                
-    except Exception as e:
-        print(f"OCR Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to process OCR: {str(e)}")
 
-    final_text = "\n".join(extracted_text)
-    print(f"Extracted Text:\n{final_text}")
-    
-    return {"text": final_text.strip()}
+                # Strategy 1: try native text extraction (digital PDFs — zero cost, instant)
+                native_text = page.get_text("text").strip()
+                if native_text:
+                    extracted_text.append(native_text)
+                    continue
+
+                # Strategy 2: page is image-only — render and run Tesseract
+                # 300 DPI equivalent: scale factor 4 gives ~288 DPI from 72 DPI base
+                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img = preprocess_image(img)
+                text = pytesseract.image_to_string(img, lang="eng", config="--psm 3")
+                if text.strip():
+                    extracted_text.append(text.strip())
+
+            pdf_document.close()
+
+        else:
+            # Image file (PNG/JPG)
+            img = Image.open(io.BytesIO(content)).convert("RGB")
+            img = preprocess_image(img)
+            text = pytesseract.image_to_string(img, lang="eng", config="--psm 3")
+            if text.strip():
+                extracted_text.append(text.strip())
+
+    except Exception as e:
+        print(f"OCR Error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process document. Check server logs.")
+
+    final_text = "\n\n".join(extracted_text).strip()
+    print(f"OCR complete — extracted {len(final_text)} characters")
+
+    return {"text": final_text}
+
+
+def preprocess_image(img: Image.Image) -> Image.Image:
+    """Apply light preprocessing to improve OCR accuracy on scanned documents."""
+    # Convert to grayscale
+    img = img.convert("L")
+    # Mild sharpening helps with slightly blurry scans
+    img = img.filter(ImageFilter.SHARPEN)
+    return img
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

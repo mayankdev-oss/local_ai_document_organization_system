@@ -1,0 +1,21 @@
+# Go binaries
+*.exe
+server.exe
+main.exe
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded documents (never commit user data)
+uploads/
+
+# IDE and OS noise
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+
+# Scratch files
+scratch/

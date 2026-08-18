@@ -29,13 +29,13 @@
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-background text-gray-800 h-screen overflow-hidden" x-data="{ currentPath: '/', isAuthenticated: false }">
+<body class="bg-background text-gray-800 h-screen overflow-hidden" x-data="{ currentPath: '/', isAuthenticated: false }" @login-success.window="isAuthenticated = true">
 
     <!-- Login View (Simple) -->
     <div x-show="!isAuthenticated" class="h-full flex items-center justify-center">
         <div class="bg-white p-8 rounded-xl shadow-lg w-96">
             <h2 class="text-2xl font-bold mb-6 text-center text-primary">DocuNest Login</h2>
-            <form @submit.prevent="login" x-data="{ username: '', password: '', error: '' }">
+            <form @submit.prevent="login($data)" x-data="{ username: '', password: '', error: '' }">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
                     <input type="text" x-model="username" class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
@@ -86,14 +86,19 @@
             </div>
             
             <div class="p-4">
-                <div class="bg-white/10 p-4 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-white/20 transition">
-                    <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold">
-                        AM
+                <div class="bg-white/10 p-4 rounded-xl flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold">
+                            AM
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium">Admin User</div>
+                            <div class="text-xs text-gray-400">Admin</div>
+                        </div>
                     </div>
-                    <div>
-                        <div class="text-sm font-medium">Admin User</div>
-                        <div class="text-xs text-gray-400">Admin</div>
-                    </div>
+                    <button @click="logout()" title="Sign out" class="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-white/10">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -116,9 +121,9 @@
             </header>
 
             <!-- Dashboard Content -->
-            <div x-show="currentPath === '/'" class="space-y-6" x-data="{ stats: { total_documents: 0, total_customers: 0, processed_today: 0 } }" x-init="fetch('/api/stats').then(r => r.json()).then(d => stats = d)">
+            <div x-show="currentPath === '/'" class="space-y-6" x-data="dashboardView()" x-init="loadStats()">
                 <!-- Stats Row -->
-                <div class="grid grid-cols-4 gap-6">
+                <div class="grid grid-cols-3 gap-6">
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
                         <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -144,6 +149,83 @@
                         <div>
                             <div class="text-2xl font-bold" x-text="stats.processed_today"></div>
                             <div class="text-sm text-gray-500">Processed Today</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin: Danger Zone -->
+                <div class="bg-white rounded-2xl shadow-sm border border-red-100 p-6">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                <h4 class="font-bold text-red-700">Danger Zone</h4>
+                            </div>
+                            <p class="text-sm text-gray-600 max-w-lg">Permanently delete all customers, documents, and uploaded files from this account. This action cannot be undone and there is no recovery option.</p>
+                        </div>
+                        <button @click="wipeModalOpen = true" class="flex-shrink-0 ml-6 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                            Wipe All Data
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Wipe Confirmation Modal -->
+                <div x-show="wipeModalOpen" style="display:none;" class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="wipe-modal-title">
+                    <div class="flex items-center justify-center min-h-screen px-4">
+                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="closeWipeModal()"></div>
+                        <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 z-10">
+                            <!-- Header -->
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-gray-900" id="wipe-modal-title">This action is permanent</h3>
+                                    <p class="text-sm text-gray-500">There is no undo, no backup, no recovery.</p>
+                                </div>
+                            </div>
+
+                            <!-- Warning detail -->
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 text-sm text-red-800 space-y-1">
+                                <p class="font-semibold">The following will be permanently deleted:</p>
+                                <ul class="list-disc list-inside space-y-0.5 text-red-700">
+                                    <li>All customer records</li>
+                                    <li>All uploaded documents and files on disk</li>
+                                    <li>All audit logs</li>
+                                </ul>
+                            </div>
+
+                            <!-- Confirmation input -->
+                            <p class="text-sm text-gray-700 mb-2">To confirm, type exactly: <code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-red-700 font-semibold">wipe my data</code></p>
+                            <input
+                                type="text"
+                                x-model="wipeConfirmInput"
+                                @keyup.enter="submitWipe()"
+                                placeholder="wipe my data"
+                                autocomplete="off"
+                                class="w-full border-2 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition"
+                                :class="wipeConfirmInput === 'wipe my data' ? 'border-red-500 bg-red-50' : 'border-gray-300'"
+                            >
+                            <div x-show="wipeError" class="text-red-600 text-xs mt-1" x-text="wipeError"></div>
+
+                            <!-- Actions -->
+                            <div class="flex gap-3 mt-5 justify-end">
+                                <button @click="closeWipeModal()" type="button" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                                    Cancel
+                                </button>
+                                <button
+                                    @click="submitWipe()"
+                                    type="button"
+                                    :disabled="wipeConfirmInput !== 'wipe my data' || wiping"
+                                    class="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-500"
+                                >
+                                    <span x-show="!wiping">Permanently Delete Everything</span>
+                                    <span x-show="wiping" class="flex items-center gap-2">
+                                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                        Wiping...
+                                    </span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -318,6 +400,14 @@
                                             <label class="block text-sm font-medium text-gray-700">Person Name</label>
                                             <input type="text" x-model="reviewDoc.person_name" class="mt-1 w-full border rounded-lg px-3 py-2">
                                         </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Date of Birth</label>
+                                            <input type="text" x-model="reviewDoc.dob" class="mt-1 w-full border rounded-lg px-3 py-2" placeholder="DD/MM/YYYY">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Document ID Number</label>
+                                            <input type="text" x-model="reviewDoc.document_id_number" class="mt-1 w-full border rounded-lg px-3 py-2">
+                                        </div>
                                         
                                         <div class="pt-2">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">Customer Assignment</label>
@@ -448,24 +538,41 @@
 
     <script>
         document.addEventListener('alpine:init', () => {
+            // Check session validity against the server on every page load.
+            // The UI never trusts its own state alone — all protected actions
+            // are still verified server-side.
             fetch('/api/ping').then(res => {
                 if (res.ok) {
-                    Alpine.store('auth', { isAuthenticated: true })
+                    window.dispatchEvent(new CustomEvent('login-success'));
                 }
-            })
+            }).catch(() => {})
         })
 
-        function login() {
+        function logout() {
+            fetch('/api/logout', { method: 'POST' })
+                .finally(() => {
+                    // Reset client state and force a full page reload
+                    // so no cached data remains in memory
+                    window.location.href = '/';
+                });
+        }
+
+        function login(data) {
             fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: this.username, password: this.password })
+                body: JSON.stringify({ username: data.username, password: data.password })
             }).then(res => {
                 if (res.ok) {
-                    this.isAuthenticated = true;
+                    window.dispatchEvent(new CustomEvent('login-success'));
+                    data.error = '';
+                } else if (res.status === 429) {
+                    data.error = 'Too many failed attempts. Please wait 15 minutes.';
                 } else {
-                    this.error = "Invalid credentials";
+                    data.error = 'Invalid credentials';
                 }
+            }).catch(() => {
+                data.error = 'Network error. Please try again.';
             })
         }
         
@@ -613,6 +720,8 @@
                         body: JSON.stringify({
                             person_name: this.reviewDoc.person_name,
                             document_type: this.reviewDoc.document_type,
+                            dob: this.reviewDoc.dob || "",
+                            document_id_number: this.reviewDoc.document_id_number || "",
                             customer_id: custId
                         })
                     })
@@ -659,6 +768,61 @@
                 }
             }
         }
+
+        function dashboardView() {
+            return {
+                stats: { total_documents: 0, total_customers: 0, processed_today: 0 },
+                wipeModalOpen: false,
+                wipeConfirmInput: '',
+                wipeError: '',
+                wiping: false,
+
+                loadStats() {
+                    fetch('/api/stats')
+                        .then(r => r.json())
+                        .then(d => this.stats = d || this.stats)
+                        .catch(() => {});
+                },
+
+                closeWipeModal() {
+                    this.wipeModalOpen = false;
+                    this.wipeConfirmInput = '';
+                    this.wipeError = '';
+                },
+
+                submitWipe() {
+                    if (this.wipeConfirmInput !== 'wipe my data') {
+                        this.wipeError = 'Phrase does not match. Type exactly: wipe my data';
+                        return;
+                    }
+                    this.wiping = true;
+                    this.wipeError = '';
+
+                    fetch('/api/admin/wipe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirmation: 'wipe my data' })
+                    })
+                    .then(res => {
+                        if (res.ok) {
+                            this.closeWipeModal();
+                            this.loadStats();
+                        } else {
+                            res.text().then(t => {
+                                this.wipeError = t || 'Wipe failed. Please try again.';
+                            });
+                        }
+                    })
+                    .catch(() => {
+                        this.wipeError = 'Network error. Please try again.';
+                    })
+                    .finally(() => {
+                        this.wiping = false;
+                    });
+                }
+            }
+        }
     </script>
 </body>
 </html>
+
