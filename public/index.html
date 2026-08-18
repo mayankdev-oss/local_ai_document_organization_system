@@ -361,10 +361,10 @@
             </div>
 
             <!-- Customers Content -->
-            <div x-show="currentPath === '/customers'" x-data="{ customers: [] }" x-init="$watch('currentPath', val => { if(val === '/customers') fetch('/api/customers').then(r => r.json()).then(d => customers = d) })" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div x-show="currentPath === '/customers'" x-data="customersView()" x-init="initView()" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                     <h3 class="text-xl font-bold">All Customers</h3>
-                    <button @click="fetch('/api/customers').then(r => r.json()).then(d => customers = d)" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
+                    <button @click="fetchCustomers()" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         Refresh
                     </button>
@@ -378,19 +378,68 @@
                                 <th class="px-6 py-4">Created Date</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <template x-for="c in customers" :key="c.id">
-                                <tr class="hover:bg-gray-50 transition">
+                        <template x-for="c in customers" :key="c.id">
+                            <tbody class="border-b border-gray-100" x-data="{ docs: [], loading: false, loaded: false }">
+                                <tr class="hover:bg-gray-50 transition cursor-pointer" @click="if(expandedCustomer === c.id) { expandedCustomer = null } else { expandedCustomer = c.id; if(!loaded) { loading = true; fetch(`/api/customers/${c.id}/documents`).then(r=>r.json()).then(d=>{docs=d||[]; loaded=true; loading=false;}) } }">
                                     <td class="px-6 py-4 text-xs text-gray-500 font-mono" x-text="c.id"></td>
-                                    <td class="px-6 py-4 font-medium text-gray-900" x-text="c.name"></td>
+                                    <td class="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                                        <svg :class="expandedCustomer === c.id ? 'rotate-90 text-secondary' : 'text-gray-400'" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                        <span x-text="c.name"></span>
+                                    </td>
                                     <td class="px-6 py-4 text-gray-500" x-text="new Date(c.created_at).toLocaleDateString()"></td>
                                 </tr>
-                            </template>
-                            <tr x-show="customers == null || customers.length === 0">
+                                <tr x-show="expandedCustomer === c.id" x-transition>
+                                    <td colspan="3" class="px-6 py-4 bg-gray-50 border-t-0">
+                                        <div x-show="loading" class="text-sm text-gray-500 flex items-center gap-2">
+                                            <svg class="animate-spin h-4 w-4 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            Loading documents...
+                                        </div>
+                                        <div x-show="!loading && docs.length === 0" class="text-sm text-gray-500 pl-6">No documents found.</div>
+                                        <div x-show="!loading && docs.length > 0" class="space-y-2 pl-6 border-l-2 border-gray-200 ml-2">
+                                            <template x-for="doc in docs" :key="doc.id">
+                                                <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition">
+                                                    <div class="flex flex-col">
+                                                        <span class="font-medium text-sm text-gray-900" x-text="doc.original_name"></span>
+                                                        <span class="text-xs text-gray-500 capitalize" x-text="(doc.document_type || 'Unknown') + ' • ' + (doc.status.replace('_', ' '))"></span>
+                                                    </div>
+                                                    <button @click.stop="previewDocument(doc)" class="text-xs font-medium text-secondary hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 transition">Preview</button>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </template>
+                        <tbody x-show="customers == null || customers.length === 0">
+                            <tr>
                                 <td colspan="3" class="px-6 py-8 text-center text-gray-500">No customers found.</td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Document Preview Modal -->
+                <div x-show="previewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="previewModalOpen = false"></div>
+                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                        <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle w-full max-w-4xl" style="height: 80vh;">
+                            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                <h3 class="text-lg leading-6 font-bold text-gray-900 flex flex-col">
+                                    <span x-text="previewDoc?.original_name"></span>
+                                    <span class="text-xs text-gray-500 font-normal" x-text="previewDoc?.document_type || 'Unknown Document'"></span>
+                                </h3>
+                                <button type="button" @click="previewModalOpen = false" class="text-gray-400 hover:text-gray-500 bg-white border border-gray-200 rounded-lg p-2 hover:bg-gray-50 transition">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                            <div class="h-full pb-16">
+                                <template x-if="previewUrl">
+                                    <iframe :src="previewUrl" class="w-full h-full border-0 bg-gray-100"></iframe>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -578,6 +627,35 @@
                     .finally(() => {
                         this.submittingReview = false;
                     });
+                }
+            }
+        }
+
+        function customersView() {
+            return {
+                customers: [],
+                expandedCustomer: null,
+                previewModalOpen: false,
+                previewDoc: null,
+                previewUrl: null,
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if(val === '/customers') this.fetchCustomers();
+                    });
+                    if(this.currentPath === '/customers') this.fetchCustomers();
+                },
+
+                fetchCustomers() {
+                    fetch('/api/customers')
+                        .then(r => r.json())
+                        .then(d => this.customers = d || []);
+                },
+
+                previewDocument(doc) {
+                    this.previewDoc = doc;
+                    this.previewUrl = `/api/documents/${doc.id}/view`;
+                    this.previewModalOpen = true;
                 }
             }
         }

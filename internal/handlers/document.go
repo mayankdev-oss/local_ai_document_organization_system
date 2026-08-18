@@ -6,6 +6,7 @@ import (
 
 	"docunest/internal/database"
 	"docunest/internal/models"
+	"github.com/gorilla/mux"
 )
 
 func GetDocuments(w http.ResponseWriter, r *http.Request) {
@@ -48,4 +49,24 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(documents)
+}
+
+func ViewDocument(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	docID := vars["id"]
+
+	var filepath string
+	err := database.DB.QueryRow("SELECT filepath FROM documents WHERE id = $1 AND user_id = $2", docID, userID).Scan(&filepath)
+	if err != nil {
+		http.Error(w, "Document not found or access denied", http.StatusNotFound)
+		return
+	}
+
+	http.ServeFile(w, r, filepath)
 }
