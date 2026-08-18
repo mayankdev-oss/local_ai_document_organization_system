@@ -46,6 +46,8 @@ func main() {
 	protected.HandleFunc("/customers", handlers.GetCustomers).Methods("GET")
 	protected.HandleFunc("/documents", handlers.GetDocuments).Methods("GET")
 	protected.HandleFunc("/documents/upload", handlers.UploadDocument).Methods("POST")
+	protected.HandleFunc("/documents/{id}/confirm", handlers.ConfirmDocument).Methods("POST")
+	protected.HandleFunc("/stats", handlers.GetStats).Methods("GET")
 
 	// Static files (Frontend)
 	r.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("./public"))))

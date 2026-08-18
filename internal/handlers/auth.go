@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
@@ -9,8 +10,8 @@ import (
 	"time"
 
 	"docunest/internal/database"
+	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var jwtKey = []byte(getEnv("JWT_SECRET", "super_secret_key_for_docunest"))
@@ -28,9 +29,14 @@ type Credentials struct {
 }
 
 type Claims struct {
+	UserID   int    `json:"user_id"`
 	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
+
+type contextKey string
+
+const UserIDKey contextKey = "user_id"
 
 func SeedAdminUser() {
 	var count int
@@ -40,19 +46,26 @@ func SeedAdminUser() {
 		return
 	}
 
-	if count == 0 {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
-		if err != nil {
-			log.Printf("Error hashing password: %v", err)
-			return
-		}
+	hash, err := argon2id.CreateHash("admin", argon2id.DefaultParams)
+	if err != nil {
+		log.Printf("Error hashing password: %v", err)
+		return
+	}
 
-		_, err = database.DB.Exec("INSERT INTO users (username, password_hash) VALUES ($1, $2)", "admin", string(hashedPassword))
+	if count == 0 {
+		_, err = database.DB.Exec("INSERT INTO users (username, password_hash) VALUES ($1, $2)", "admin", hash)
 		if err != nil {
 			log.Printf("Error seeding admin user: %v", err)
 			return
 		}
 		log.Println("Seeded default admin user (admin/admin)")
+	} else {
+		// Temporary fix to ensure the existing admin gets the new Argon2id hash
+		_, err = database.DB.Exec("UPDATE users SET password_hash = $1 WHERE username = 'admin'", hash)
+		if err != nil {
+			log.Printf("Error updating admin user: %v", err)
+			return
+		}
 	}
 }
 
@@ -65,7 +78,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var storedHash string
-	err = database.DB.QueryRow("SELECT password_hash FROM users WHERE username = $1", creds.Username).Scan(&storedHash)
+	var userID int
+	err = database.DB.QueryRow("SELECT id, password_hash FROM users WHERE username = $1", creds.Username).Scan(&userID, &storedHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Invalid username or password", http.StatusUnauthorized)
@@ -75,14 +89,15 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(creds.Password))
-	if err != nil {
+	match, err := argon2id.ComparePasswordAndHash(creds.Password, storedHash)
+	if err != nil || !match {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
 
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
+		UserID:   userID,
 		Username: creds.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -101,6 +116,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Value:    tokenString,
 		Expires:  expirationTime,
 		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
 		Path:     "/",
 	})
 
@@ -140,6 +157,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		// Inject user_id into context
+		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

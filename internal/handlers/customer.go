@@ -10,15 +10,21 @@ import (
 )
 
 func GetCustomers(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	query := r.URL.Query().Get("q")
 	
 	var rows *sql.Rows
 	var err error
 	
 	if query != "" {
-		rows, err = database.DB.Query("SELECT id, name, created_at FROM customers WHERE name ILIKE $1 ORDER BY name ASC LIMIT 20", "%"+query+"%")
+		rows, err = database.DB.Query("SELECT id, name, created_at FROM customers WHERE user_id = $1 AND name ILIKE $2 ORDER BY name ASC LIMIT 20", userID, "%"+query+"%")
 	} else {
-		rows, err = database.DB.Query("SELECT id, name, created_at FROM customers ORDER BY name ASC LIMIT 20")
+		rows, err = database.DB.Query("SELECT id, name, created_at FROM customers WHERE user_id = $1 ORDER BY name ASC LIMIT 20", userID)
 	}
 
 	if err != nil {

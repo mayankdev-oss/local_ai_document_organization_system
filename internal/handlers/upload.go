@@ -9,13 +9,34 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
+	"time"
 
 	"docunest/internal/database"
 	"docunest/internal/storage"
 )
 
+var uploadRateLimiter = make(map[string]time.Time)
+var limiterMutex sync.Mutex
+
 func UploadDocument(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	clientIP := r.RemoteAddr
+	limiterMutex.Lock()
+	lastUpload, exists := uploadRateLimiter[clientIP]
+	if exists && time.Since(lastUpload) < 5*time.Second {
+		limiterMutex.Unlock()
+		http.Error(w, "Rate limit exceeded. Please wait 5 seconds.", http.StatusTooManyRequests)
+		return
+	}
+	uploadRateLimiter[clientIP] = time.Now()
+	limiterMutex.Unlock()
+
 	err := r.ParseMultipartForm(10 << 20) // 10 MB limit
 	if err != nil {
 		http.Error(w, "Failed to parse form", http.StatusBadRequest)
@@ -29,19 +50,22 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Validate file type
-	ext := strings.ToLower(filepath.Ext(handler.Filename))
-	if ext != ".pdf" && ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
-		http.Error(w, "Invalid file type. Only PDF, JPG, JPEG, and PNG are allowed.", http.StatusBadRequest)
+	// MIME Validation
+	buffer := make([]byte, 512)
+	if _, err := file.Read(buffer); err != nil {
+		http.Error(w, "Failed to read file", http.StatusBadRequest)
+		return
+	}
+	file.Seek(0, 0)
+	contentType := http.DetectContentType(buffer)
+	if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
+		http.Error(w, "Invalid MIME type. Only PDF, JPEG, and PNG are allowed.", http.StatusBadRequest)
 		return
 	}
 
 	// Customer logic
 	customerType := r.FormValue("customer_type") // "new" or "existing"
 	customerID := r.FormValue("customer_id")
-	// For "new" customer, we don't have an ID yet. 
-	// The plan says: "New Customer requires only the upload... Extract name and create a unique customer ID when no match exists (Phase 5)"
-	// For now, in Phase 2, we just save the document.
 
 	if customerType == "existing" && customerID == "" {
 		http.Error(w, "Customer ID is required for existing customer", http.StatusBadRequest)
@@ -62,9 +86,9 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		cID = &customerID
 	}
 
-	query := `INSERT INTO documents (filename, filepath, original_name, status, customer_id) 
-	          VALUES ($1, $2, $3, $4, $5) RETURNING id`
-	err = database.DB.QueryRow(query, newFilename, filePath, handler.Filename, "uploaded", cID).Scan(&docID)
+	query := `INSERT INTO documents (user_id, filename, filepath, original_name, status, customer_id) 
+	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+	err = database.DB.QueryRow(query, userID, newFilename, filePath, handler.Filename, "uploaded", cID).Scan(&docID)
 	
 	if err != nil {
 		http.Error(w, "Failed to create database record", http.StatusInternalServerError)
@@ -217,48 +241,21 @@ OCR Text:
 		return
 	}
 
-	// Phase 5: Customer Organization
-	var existingCustomerID *string
-	err = database.DB.QueryRow("SELECT customer_id FROM documents WHERE id = $1", docID).Scan(&existingCustomerID)
-	if err != nil {
-		fmt.Printf("Warning: Failed to fetch current customer_id for doc %d: %v\n", docID, err)
-	}
-
-	// If no customer is assigned and we extracted a person's name, find or create the customer
-	if existingCustomerID == nil && extractedData.PersonName != nil && *extractedData.PersonName != "" {
-		var matchedCustomerID string
-		
-		// 1. Try to find existing customer (case insensitive)
-		err = database.DB.QueryRow("SELECT id FROM customers WHERE LOWER(name) = LOWER($1)", *extractedData.PersonName).Scan(&matchedCustomerID)
-		
-		if err != nil {
-			// 2. If not found, create a new customer
-			err = database.DB.QueryRow("INSERT INTO customers (name) VALUES ($1) RETURNING id", *extractedData.PersonName).Scan(&matchedCustomerID)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create new customer for doc %d: %v\n", docID, err)
-			} else {
-				existingCustomerID = &matchedCustomerID
-				fmt.Printf("Created new customer %s (ID: %s)\n", *extractedData.PersonName, matchedCustomerID)
-			}
-		} else {
-			existingCustomerID = &matchedCustomerID
-			fmt.Printf("Matched existing customer %s (ID: %s)\n", *extractedData.PersonName, matchedCustomerID)
-		}
-	}
-
-	// Update database with extracted info and final customer_id
+	// We will NOT auto-create the customer here anymore (Security Requirement #9).
+	// We just save the AI extracted data and set status to 'needs_review'.
+	// The user will confirm and map the customer via the new /api/documents/{id}/confirm endpoint.
 	_, err = database.DB.Exec(`
 		UPDATE documents 
-		SET document_type = $1, person_name = $2, customer_id = $3, status = 'completed' 
-		WHERE id = $4
-	`, extractedData.DocumentType, extractedData.PersonName, existingCustomerID, docID)
+		SET document_type = $1, person_name = $2, status = 'needs_review' 
+		WHERE id = $3
+	`, extractedData.DocumentType, extractedData.PersonName, docID)
 	
 	if err != nil {
 		fmt.Printf("Failed to update database with AI results for doc %d: %v\n", docID, err)
 		return
 	}
 	
-	fmt.Printf("Successfully classified document %d: Type=%s, Person=%v, CustomerID=%v\n", docID, extractedData.DocumentType, extractedData.PersonName, existingCustomerID)
+	fmt.Printf("Successfully classified document %d (needs review): Type=%s, Person=%v\n", docID, extractedData.DocumentType, extractedData.PersonName)
 }
 
 func updateStatusAndError(docID int, status, errMsg string) {

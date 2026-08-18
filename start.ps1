@@ -2,6 +2,21 @@ Write-Host "==================================" -ForegroundColor Cyan
 Write-Host " Starting DocuNest Local Services " -ForegroundColor Cyan
 Write-Host "==================================" -ForegroundColor Cyan
 
+Write-Host "`n[0/3] Cleaning up old processes..." -ForegroundColor Yellow
+# Kill process on port 8080 (Go API)
+$goProcess = Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue
+if ($goProcess) {
+    Write-Host "Stopping old Go Server on port 8080..." -ForegroundColor Cyan
+    Stop-Process -Id $goProcess.OwningProcess -Force -ErrorAction SilentlyContinue
+}
+
+# Kill process on port 8000 (Python OCR)
+$pyProcess = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
+if ($pyProcess) {
+    Write-Host "Stopping old Python OCR Server on port 8000..." -ForegroundColor Cyan
+    Stop-Process -Id $pyProcess.OwningProcess -Force -ErrorAction SilentlyContinue
+}
+
 # Check if Ollama is responding
 Write-Host "`n[1/3] Checking Ollama AI Service..." -ForegroundColor Yellow
 try {

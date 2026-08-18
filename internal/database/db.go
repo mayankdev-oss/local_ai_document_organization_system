@@ -61,12 +61,14 @@ func InitSchema() error {
 
 	CREATE TABLE IF NOT EXISTS customers (
 		id VARCHAR(50) PRIMARY KEY,
+		user_id INT REFERENCES users(id),
 		name VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS documents (
 		id SERIAL PRIMARY KEY,
+		user_id INT REFERENCES users(id),
 		filename VARCHAR(255) NOT NULL,
 		filepath VARCHAR(512) NOT NULL,
 		original_name VARCHAR(255) NOT NULL,
@@ -78,11 +80,24 @@ func InitSchema() error {
 		customer_id VARCHAR(50) REFERENCES customers(id),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id SERIAL PRIMARY KEY,
+		user_id INT REFERENCES users(id),
+		document_id INT REFERENCES documents(id),
+		action VARCHAR(255) NOT NULL,
+		details JSONB,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := DB.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("error creating schema: %w", err)
 	}
+
+	// Safely add user_id to existing tables (ignoring errors if columns already exist)
+	DB.Exec("ALTER TABLE customers ADD COLUMN user_id INT REFERENCES users(id)")
+	DB.Exec("ALTER TABLE documents ADD COLUMN user_id INT REFERENCES users(id)")
 
 	log.Println("Database schema initialized")
 	return nil

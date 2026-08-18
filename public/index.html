@@ -74,7 +74,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                         Upload Document
                     </a>
-                    <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 hover:bg-white/10 transition">
+                    <a href="#" @click.prevent="currentPath = '/customers'" :class="currentPath === '/customers' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         Customers
                     </a>
@@ -116,7 +116,7 @@
             </header>
 
             <!-- Dashboard Content -->
-            <div x-show="currentPath === '/'" class="space-y-6">
+            <div x-show="currentPath === '/'" class="space-y-6" x-data="{ stats: { total_documents: 0, total_customers: 0, processed_today: 0 } }" x-init="fetch('/api/stats').then(r => r.json()).then(d => stats = d)">
                 <!-- Stats Row -->
                 <div class="grid grid-cols-4 gap-6">
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
@@ -124,7 +124,7 @@
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         </div>
                         <div>
-                            <div class="text-2xl font-bold">128</div>
+                            <div class="text-2xl font-bold" x-text="stats.total_documents"></div>
                             <div class="text-sm text-gray-500">Total Documents</div>
                         </div>
                     </div>
@@ -133,8 +133,17 @@
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         </div>
                         <div>
-                            <div class="text-2xl font-bold">42</div>
+                            <div class="text-2xl font-bold" x-text="stats.total_customers"></div>
                             <div class="text-sm text-gray-500">Customers</div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold" x-text="stats.processed_today"></div>
+                            <div class="text-sm text-gray-500">Processed Today</div>
                         </div>
                     </div>
                 </div>
@@ -233,7 +242,7 @@
             </div>
             
             <!-- Documents Content -->
-            <div x-show="currentPath === '/documents'" x-data="{ documents: [] }" x-init="$watch('currentPath', val => { if(val === '/documents') fetch('/api/documents').then(r => r.json()).then(d => documents = d) })" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div x-show="currentPath === '/documents'" x-data="documentsView()" x-init="initView()" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                     <h3 class="text-xl font-bold">Recent Documents</h3>
                     <button @click="fetch('/api/documents').then(r => r.json()).then(d => documents = d)" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
@@ -251,6 +260,7 @@
                                 <th class="px-6 py-4">Person</th>
                                 <th class="px-6 py-4">Customer</th>
                                 <th class="px-6 py-4">Date</th>
+                                <th class="px-6 py-4 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -266,19 +276,118 @@
                                                   'bg-blue-100 text-blue-800': doc.status === 'uploaded',
                                                   'bg-yellow-100 text-yellow-800': doc.status === 'reading',
                                                   'bg-purple-100 text-purple-800': doc.status === 'identifying',
+                                                  'bg-orange-100 text-orange-800': doc.status === 'needs_review',
                                                   'bg-green-100 text-green-800': doc.status === 'completed',
                                                   'bg-red-100 text-red-800': doc.status === 'failed'
-                                              }" x-text="doc.status">
+                                              }" x-text="doc.status.replace('_', ' ')">
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-gray-500" x-text="doc.document_type || '-'"></td>
                                     <td class="px-6 py-4 text-gray-500" x-text="doc.person_name || '-'"></td>
-                                    <td class="px-6 py-4 text-gray-900 font-medium" x-text="doc.customer_name || 'New'"></td>
+                                    <td class="px-6 py-4 text-gray-900 font-medium" x-text="doc.customer_name || (doc.status === 'needs_review' ? 'Pending Review' : 'New')"></td>
                                     <td class="px-6 py-4 text-gray-500" x-text="new Date(doc.created_at).toLocaleDateString()"></td>
+                                    <td class="px-6 py-4 text-right">
+                                        <button x-show="doc.status === 'needs_review'" @click="openReviewModal(doc)" class="text-sm bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-medium transition">Review</button>
+                                    </td>
                                 </tr>
                             </template>
                             <tr x-show="documents == null || documents.length === 0">
                                 <td colspan="6" class="px-6 py-8 text-center text-gray-500">No documents found.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Review Modal -->
+                <div x-show="reviewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="reviewModalOpen = false"></div>
+                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                        <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                            <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                <h3 class="text-lg leading-6 font-bold text-gray-900" id="modal-title">Review AI Extraction</h3>
+                                <div class="mt-2">
+                                    <p class="text-sm text-gray-500 mb-6">Please verify the AI's classification before completing.</p>
+                                    
+                                    <div class="space-y-4 text-left">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Document Type</label>
+                                            <input type="text" x-model="reviewDoc.document_type" class="mt-1 w-full border rounded-lg px-3 py-2">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">Person Name</label>
+                                            <input type="text" x-model="reviewDoc.person_name" class="mt-1 w-full border rounded-lg px-3 py-2">
+                                        </div>
+                                        
+                                        <div class="pt-2">
+                                            <label class="block text-sm font-medium text-gray-700 mb-2">Customer Assignment</label>
+                                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                                <button type="button" @click="reviewCustomerType = 'new'; reviewSearchQuery = ''; reviewSelectedCustomer = null" :class="reviewCustomerType === 'new' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-2 rounded-lg text-sm font-medium">Create New</button>
+                                                <button type="button" @click="reviewCustomerType = 'existing'" :class="reviewCustomerType === 'existing' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-2 rounded-lg text-sm font-medium">Link Existing</button>
+                                            </div>
+                                            
+                                            <div x-show="reviewCustomerType === 'existing'" class="relative">
+                                                <input type="text" x-model="reviewSearchQuery" @input.debounce.300ms="searchReviewCustomers" placeholder="Search customers..." class="w-full border rounded-lg px-3 py-2">
+                                                
+                                                <div x-show="reviewCustomers.length > 0 && reviewSearchQuery.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                                    <template x-for="c in reviewCustomers" :key="c.id">
+                                                        <div @click="selectReviewCustomer(c)" class="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-0 text-sm">
+                                                            <div class="font-medium" x-text="c.name"></div>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                                
+                                                <div x-show="reviewSelectedCustomer" class="mt-2 text-sm text-green-700 flex items-center justify-between bg-green-50 px-3 py-2 rounded">
+                                                    <span x-text="'Linked to: ' + reviewSelectedCustomer?.name"></span>
+                                                    <button @click="reviewSelectedCustomer = null; reviewSearchQuery = ''" class="font-bold text-green-800">×</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 px-4 py-3 sm:px-6 flex justify-end gap-3">
+                                <button type="button" @click="reviewModalOpen = false" class="inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button type="button" @click="submitReview" :disabled="submittingReview || (reviewCustomerType === 'existing' && !reviewSelectedCustomer)" class="inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-secondary text-sm font-medium text-white hover:bg-opacity-90 disabled:opacity-50">
+                                    <span x-show="!submittingReview">Confirm & Save</span>
+                                    <span x-show="submittingReview">Saving...</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Customers Content -->
+            <div x-show="currentPath === '/customers'" x-data="{ customers: [] }" x-init="$watch('currentPath', val => { if(val === '/customers') fetch('/api/customers').then(r => r.json()).then(d => customers = d) })" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 class="text-xl font-bold">All Customers</h3>
+                    <button @click="fetch('/api/customers').then(r => r.json()).then(d => customers = d)" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Refresh
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 font-medium">
+                            <tr>
+                                <th class="px-6 py-4">ID</th>
+                                <th class="px-6 py-4">Name</th>
+                                <th class="px-6 py-4">Created Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="c in customers" :key="c.id">
+                                <tr class="hover:bg-gray-50 transition">
+                                    <td class="px-6 py-4 text-xs text-gray-500 font-mono" x-text="c.id"></td>
+                                    <td class="px-6 py-4 font-medium text-gray-900" x-text="c.name"></td>
+                                    <td class="px-6 py-4 text-gray-500" x-text="new Date(c.created_at).toLocaleDateString()"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="customers == null || customers.length === 0">
+                                <td colspan="3" class="px-6 py-8 text-center text-gray-500">No customers found.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -391,6 +500,84 @@
                     .finally(() => {
                         this.uploading = false;
                     })
+                }
+            }
+        }
+
+        function documentsView() {
+            return {
+                documents: [],
+                reviewModalOpen: false,
+                reviewDoc: null,
+                reviewCustomerType: 'new',
+                reviewSearchQuery: '',
+                reviewCustomers: [],
+                reviewSelectedCustomer: null,
+                submittingReview: false,
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if(val === '/documents') this.fetchDocuments();
+                    });
+                    if(this.currentPath === '/documents') this.fetchDocuments();
+                },
+
+                fetchDocuments() {
+                    fetch('/api/documents')
+                        .then(r => r.json())
+                        .then(d => this.documents = d || []);
+                },
+
+                openReviewModal(doc) {
+                    this.reviewDoc = { ...doc };
+                    this.reviewCustomerType = 'new';
+                    this.reviewSearchQuery = '';
+                    this.reviewSelectedCustomer = null;
+                    this.reviewModalOpen = true;
+                },
+
+                searchReviewCustomers() {
+                    if (this.reviewSearchQuery.length < 2) {
+                        this.reviewCustomers = [];
+                        return;
+                    }
+                    fetch(`/api/customers?q=${encodeURIComponent(this.reviewSearchQuery)}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            this.reviewCustomers = data || [];
+                        })
+                },
+
+                selectReviewCustomer(c) {
+                    this.reviewSelectedCustomer = c;
+                    this.reviewCustomers = [];
+                    this.reviewSearchQuery = '';
+                },
+
+                submitReview() {
+                    this.submittingReview = true;
+                    let custId = this.reviewCustomerType === 'new' ? 'new' : this.reviewSelectedCustomer.id;
+                    
+                    fetch(`/api/documents/${this.reviewDoc.id}/confirm`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            person_name: this.reviewDoc.person_name,
+                            document_type: this.reviewDoc.document_type,
+                            customer_id: custId
+                        })
+                    })
+                    .then(res => {
+                        if (res.ok) {
+                            this.reviewModalOpen = false;
+                            this.fetchDocuments();
+                        } else {
+                            alert("Failed to submit review");
+                        }
+                    })
+                    .finally(() => {
+                        this.submittingReview = false;
+                    });
                 }
             }
         }
