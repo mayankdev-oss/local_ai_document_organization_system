@@ -217,19 +217,48 @@ OCR Text:
 		return
 	}
 
-	// Update database with extracted info
+	// Phase 5: Customer Organization
+	var existingCustomerID *string
+	err = database.DB.QueryRow("SELECT customer_id FROM documents WHERE id = $1", docID).Scan(&existingCustomerID)
+	if err != nil {
+		fmt.Printf("Warning: Failed to fetch current customer_id for doc %d: %v\n", docID, err)
+	}
+
+	// If no customer is assigned and we extracted a person's name, find or create the customer
+	if existingCustomerID == nil && extractedData.PersonName != nil && *extractedData.PersonName != "" {
+		var matchedCustomerID string
+		
+		// 1. Try to find existing customer (case insensitive)
+		err = database.DB.QueryRow("SELECT id FROM customers WHERE LOWER(name) = LOWER($1)", *extractedData.PersonName).Scan(&matchedCustomerID)
+		
+		if err != nil {
+			// 2. If not found, create a new customer
+			err = database.DB.QueryRow("INSERT INTO customers (name) VALUES ($1) RETURNING id", *extractedData.PersonName).Scan(&matchedCustomerID)
+			if err != nil {
+				fmt.Printf("Warning: Failed to create new customer for doc %d: %v\n", docID, err)
+			} else {
+				existingCustomerID = &matchedCustomerID
+				fmt.Printf("Created new customer %s (ID: %s)\n", *extractedData.PersonName, matchedCustomerID)
+			}
+		} else {
+			existingCustomerID = &matchedCustomerID
+			fmt.Printf("Matched existing customer %s (ID: %s)\n", *extractedData.PersonName, matchedCustomerID)
+		}
+	}
+
+	// Update database with extracted info and final customer_id
 	_, err = database.DB.Exec(`
 		UPDATE documents 
-		SET document_type = $1, person_name = $2, status = 'completed' 
-		WHERE id = $3
-	`, extractedData.DocumentType, extractedData.PersonName, docID)
+		SET document_type = $1, person_name = $2, customer_id = $3, status = 'completed' 
+		WHERE id = $4
+	`, extractedData.DocumentType, extractedData.PersonName, existingCustomerID, docID)
 	
 	if err != nil {
 		fmt.Printf("Failed to update database with AI results for doc %d: %v\n", docID, err)
 		return
 	}
 	
-	fmt.Printf("Successfully classified document %d: Type=%s, Person=%v\n", docID, extractedData.DocumentType, extractedData.PersonName)
+	fmt.Printf("Successfully classified document %d: Type=%s, Person=%v, CustomerID=%v\n", docID, extractedData.DocumentType, extractedData.PersonName, existingCustomerID)
 }
 
 func updateStatusAndError(docID int, status, errMsg string) {
