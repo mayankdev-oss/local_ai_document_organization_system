@@ -46,7 +46,10 @@ type Claims struct {
 
 type contextKey string
 
-const UserIDKey contextKey = "user_id"
+const (
+	UserIDKey contextKey = "user_id"
+	RoleKey   contextKey = "role"
+)
 
 // --- Login Brute-Force Rate Limiter ---
 
@@ -128,12 +131,29 @@ func SeedAdminUser() {
 			log.Printf("Error hashing password: %v", err)
 			return
 		}
-		_, err = database.DB.Exec("INSERT INTO users (username, password_hash) VALUES ($1, $2)", "admin", hash)
+		_, err = database.DB.Exec("INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'admin')", "admin", hash)
 		if err != nil {
 			log.Printf("Error seeding admin user: %v", err)
 			return
 		}
 		log.Println("Seeded default admin user. IMPORTANT: Change the default password immediately.")
+	} else {
+		// Ensure the admin user has the admin role (for migrations)
+		database.DB.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
+	}
+
+	// Seed test users
+	seedTestUser("user1", "password123")
+	seedTestUser("user2", "password123")
+}
+
+func seedTestUser(username, password string) {
+	var count int
+	database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE username = $1", username).Scan(&count)
+	if count == 0 {
+		hash, _ := argon2id.CreateHash(password, argon2id.DefaultParams)
+		database.DB.Exec("INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'user')", username, hash)
+		log.Printf("Seeded test user: %s", username)
 	}
 }
 
@@ -160,7 +180,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	var storedHash string
 	var userID int
-	err = database.DB.QueryRow("SELECT id, password_hash FROM users WHERE username = $1", creds.Username).Scan(&userID, &storedHash)
+	var isDisabled bool
+	err = database.DB.QueryRow("SELECT id, password_hash, is_disabled FROM users WHERE username = $1", creds.Username).Scan(&userID, &storedHash, &isDisabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Use constant-time comparison path (avoid timing oracle: still call ComparePasswordAndHash)
@@ -170,6 +191,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if isDisabled {
+		http.Error(w, "Account is disabled", http.StatusForbidden)
 		return
 	}
 
@@ -258,6 +284,15 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+		
+		var role string
+		err = database.DB.QueryRow("SELECT role FROM users WHERE id = $1", claims.UserID).Scan(&role)
+		if err == nil {
+			ctx = context.WithValue(ctx, RoleKey, role)
+		} else {
+			ctx = context.WithValue(ctx, RoleKey, "user") // default
+		}
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

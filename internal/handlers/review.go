@@ -25,13 +25,23 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	role, _ := r.Context().Value(RoleKey).(string)
+
 	// Verify the document belongs to this user and is pending review
 	var currentStatus string
-	err = database.DB.QueryRow(
-		"SELECT status FROM documents WHERE id = $1 AND user_id = $2",
-		docID, userID,
-	).Scan(&currentStatus)
-	if err != nil {
+	var errDB error
+	if role == "admin" {
+		errDB = database.DB.QueryRow(
+			"SELECT status FROM documents WHERE id = $1",
+			docID,
+		).Scan(&currentStatus)
+	} else {
+		errDB = database.DB.QueryRow(
+			"SELECT status FROM documents WHERE id = $1 AND user_id = $2",
+			docID, userID,
+		).Scan(&currentStatus)
+	}
+	if errDB != nil {
 		http.Error(w, "Document not found or access denied", http.StatusNotFound)
 		return
 	}
@@ -86,7 +96,7 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		finalCustomerID = newID
-	} else {
+	} else if role != "admin" {
 		// IDOR check: ensure the provided customer_id belongs to this user
 		var exists bool
 		err = database.DB.QueryRow(
@@ -99,11 +109,19 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = database.DB.Exec(`
-		UPDATE documents 
-		SET document_type = $1, person_name = $2, dob = $3, document_id_number = $4, customer_id = $5, status = 'completed'
-		WHERE id = $6 AND user_id = $7
-	`, req.DocumentType, req.PersonName, req.DOB, req.DocumentIDNumber, finalCustomerID, docID, userID)
+	if role == "admin" {
+		_, err = database.DB.Exec(`
+			UPDATE documents 
+			SET document_type = $1, person_name = $2, dob = $3, document_id_number = $4, customer_id = $5, status = 'completed'
+			WHERE id = $6
+		`, req.DocumentType, req.PersonName, req.DOB, req.DocumentIDNumber, finalCustomerID, docID)
+	} else {
+		_, err = database.DB.Exec(`
+			UPDATE documents 
+			SET document_type = $1, person_name = $2, dob = $3, document_id_number = $4, customer_id = $5, status = 'completed'
+			WHERE id = $6 AND user_id = $7
+		`, req.DocumentType, req.PersonName, req.DOB, req.DocumentIDNumber, finalCustomerID, docID, userID)
+	}
 	if err != nil {
 		log.Printf("Failed to update document %d: %v", docID, err)
 		http.Error(w, "Failed to update document", http.StatusInternalServerError)

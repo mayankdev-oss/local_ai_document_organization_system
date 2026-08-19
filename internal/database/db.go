@@ -70,6 +70,8 @@ func InitSchema() error {
 		id SERIAL PRIMARY KEY,
 		username VARCHAR(50) UNIQUE NOT NULL,
 		password_hash VARCHAR(255) NOT NULL,
+		role VARCHAR(50) DEFAULT 'user',
+		is_disabled BOOLEAN DEFAULT FALSE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -105,6 +107,15 @@ func InitSchema() error {
 		details JSONB,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE TABLE IF NOT EXISTS document_shares (
+		token VARCHAR(64) PRIMARY KEY,
+		document_id INT REFERENCES documents(id),
+		expires_at TIMESTAMP,
+		single_use BOOLEAN DEFAULT FALSE,
+		is_revoked BOOLEAN DEFAULT FALSE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := DB.Exec(schema)
 	if err != nil {
@@ -118,6 +129,12 @@ func InitSchema() error {
 	// Safely add dob and document_id_number to existing tables
 	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
 	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
+
+	// Safely add role and is_disabled to existing tables
+	DB.Exec("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
+	DB.Exec("ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE")
+	// If admin already exists, we should probably ensure the first user (id=1) is admin if no admin exists
+	// Or we can let auth.go handle seeding. It's safer.
 
 	log.Println("Database schema initialized")
 	return nil

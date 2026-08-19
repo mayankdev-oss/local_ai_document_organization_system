@@ -24,7 +24,14 @@ try {
     Write-Host "Ollama is running!" -ForegroundColor Green
 } catch {
     Write-Host "WARNING: Ollama does not seem to be running on port 11434." -ForegroundColor Red
-    Write-Host "Please start the Ollama application from your Windows Start menu." -ForegroundColor Red
+    Write-Host "Attempting to start Ollama service automatically..." -ForegroundColor Yellow
+    try {
+        Start-Process powershell -ArgumentList "-NoExit -Command `"ollama serve`""
+        Write-Host "Ollama Service launching in a new window. Please wait a moment for it to initialize." -ForegroundColor Green
+        Start-Sleep -Seconds 3
+    } catch {
+        Write-Host "Failed to start Ollama. Please start the Ollama application from your Windows Start menu." -ForegroundColor Red
+    }
 }
 
 # Start Python OCR Service in a new window

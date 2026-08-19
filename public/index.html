@@ -9,6 +9,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
     <script>
         tailwind.config = {
             theme: {
@@ -29,7 +38,7 @@
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-background text-gray-800 h-screen overflow-hidden" x-data="{ currentPath: '/', isAuthenticated: false }" @login-success.window="isAuthenticated = true">
+<body class="bg-background text-gray-800 h-screen overflow-hidden" x-data="{ currentPath: '/', isAuthenticated: false, mobileMenuOpen: false, userRole: 'user', username: '' }" @login-success.window="isAuthenticated = true; if($event.detail) { userRole = $event.detail.role; username = $event.detail.username; }">
 
     <!-- Login View (Simple) -->
     <div x-show="!isAuthenticated" class="h-full flex items-center justify-center">
@@ -51,11 +60,29 @@
     </div>
 
     <!-- App View -->
-    <div x-show="isAuthenticated" class="flex h-full w-full">
+    <div x-show="isAuthenticated" class="flex h-full w-full relative">
+        
+        <!-- Mobile Header (Visible only on small screens) -->
+        <div class="md:hidden absolute top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-20">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                </div>
+                <h1 class="font-bold">DocuNest</h1>
+            </div>
+            <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 text-gray-600 focus:outline-none">
+                <svg x-show="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                <svg x-show="mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Sidebar Background Overlay for Mobile -->
+        <div x-show="mobileMenuOpen" @click="mobileMenuOpen = false" class="fixed inset-0 bg-gray-900/50 z-30 md:hidden" style="display: none;"></div>
+
         <!-- Sidebar -->
-        <aside class="w-64 bg-primary text-white flex flex-col justify-between">
+        <aside :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'" class="fixed md:static inset-y-0 left-0 z-40 w-64 bg-primary text-white flex flex-col justify-between transition-transform duration-300 md:translate-x-0">
             <div>
-                <div class="p-6 flex items-center gap-3">
+                <div class="p-6 flex items-center gap-3 hidden md:flex">
                     <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
                         <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
                     </div>
@@ -78,9 +105,13 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         Customers
                     </a>
-                    <a href="#" @click.prevent="currentPath = '/documents'" :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                    <a href="#" @click.prevent="currentPath = '/documents'; mobileMenuOpen = false" :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         Documents
+                    </a>
+                    <a x-show="userRole === 'admin'" href="#" @click.prevent="currentPath = '/admin'; mobileMenuOpen = false" :class="currentPath === '/admin' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        Admin Panel
                     </a>
                 </nav>
             </div>
@@ -88,12 +119,11 @@
             <div class="p-4">
                 <div class="bg-white/10 p-4 rounded-xl flex items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold">
-                            AM
+                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold uppercase" x-text="username ? username.substring(0, 2) : 'U'">
                         </div>
                         <div>
-                            <div class="text-sm font-medium">Admin User</div>
-                            <div class="text-xs text-gray-400">Admin</div>
+                            <div class="text-sm font-medium capitalize" x-text="username || 'User'"></div>
+                            <div class="text-xs text-gray-400 capitalize" x-text="userRole"></div>
                         </div>
                     </div>
                     <button @click="logout()" title="Sign out" class="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-white/10">
@@ -104,18 +134,17 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 overflow-y-auto p-8">
+        <main class="flex-1 overflow-y-auto p-4 md:p-8 pt-20 md:pt-8 relative">
             <header class="flex justify-between items-center mb-8">
                 <div>
-                    <h2 class="text-2xl font-bold" x-text="currentPath === '/' ? 'Welcome back, Admin' : (currentPath === '/upload' ? 'Upload Document' : '')"></h2>
+                    <h2 class="text-2xl font-bold" x-text="currentPath === '/' ? 'Welcome back' : (currentPath === '/upload' ? 'Upload Document' : (currentPath === '/admin' ? 'Admin Panel' : ''))"></h2>
                     <p class="text-gray-500 text-sm" x-show="currentPath === '/'">Here's what's happening with your documents today.</p>
                 </div>
                 <div class="flex items-center gap-4">
                     <button class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-600 hover:bg-gray-50">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                     </button>
-                    <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold">
-                        AM
+                    <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold uppercase" x-text="username ? username.substring(0, 2) : 'U'">
                     </div>
                 </div>
             </header>
@@ -123,7 +152,7 @@
             <!-- Dashboard Content -->
             <div x-show="currentPath === '/'" class="space-y-6" x-data="dashboardView()" x-init="loadStats()">
                 <!-- Stats Row -->
-                <div class="grid grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
                         <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -154,16 +183,16 @@
                 </div>
 
                 <!-- Admin: Danger Zone -->
-                <div class="bg-white rounded-2xl shadow-sm border border-red-100 p-6">
-                    <div class="flex items-start justify-between">
+                <div x-show="userRole === 'admin'" class="bg-white rounded-2xl shadow-sm border border-red-100 p-6 mt-8">
+                    <div class="flex flex-col md:flex-row items-start justify-between gap-4">
                         <div>
                             <div class="flex items-center gap-2 mb-1">
                                 <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                 <h4 class="font-bold text-red-700">Danger Zone</h4>
                             </div>
-                            <p class="text-sm text-gray-600 max-w-lg">Permanently delete all customers, documents, and uploaded files from this account. This action cannot be undone and there is no recovery option.</p>
+                            <p class="text-sm text-gray-600 max-w-lg">Permanently delete all customers, documents, and uploaded files from the entire system. This action cannot be undone and there is no recovery option.</p>
                         </div>
-                        <button @click="wipeModalOpen = true" class="flex-shrink-0 ml-6 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                        <button @click="wipeModalOpen = true" class="flex-shrink-0 w-full md:w-auto md:ml-6 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                             Wipe All Data
                         </button>
                     </div>
@@ -239,7 +268,7 @@
                 <h3 class="text-2xl font-bold mb-2">Upload a Document</h3>
                 <p class="text-gray-500 mb-8">We'll automatically read, classify and organize it for the right person.</p>
                 
-                <div class="grid grid-cols-2 gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div>
                         <div class="mb-4 font-medium">Who is this document for?</div>
                         <div class="grid grid-cols-2 gap-4">
@@ -368,7 +397,7 @@
                                     <td class="px-6 py-4 text-gray-500" x-text="doc.person_name || '-'"></td>
                                     <td class="px-6 py-4 text-gray-900 font-medium" x-text="doc.customer_name || (doc.status === 'needs_review' ? 'Pending Review' : 'New')"></td>
                                     <td class="px-6 py-4 text-gray-500" x-text="new Date(doc.created_at).toLocaleDateString()"></td>
-                                    <td class="px-6 py-4 text-right">
+                                    <td class="px-6 py-4 text-right flex justify-end gap-2">
                                         <button x-show="doc.status === 'needs_review'" @click="openReviewModal(doc)" class="text-sm bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-medium transition">Review</button>
                                     </td>
                                 </tr>
@@ -487,12 +516,25 @@
                                         <div x-show="!loading && docs.length === 0" class="text-sm text-gray-500 pl-6">No documents found.</div>
                                         <div x-show="!loading && docs.length > 0" class="space-y-2 pl-6 border-l-2 border-gray-200 ml-2">
                                             <template x-for="doc in docs" :key="doc.id">
-                                                <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition">
-                                                    <div class="flex flex-col">
-                                                        <span class="font-medium text-sm text-gray-900" x-text="doc.original_name"></span>
-                                                        <span class="text-xs text-gray-500 capitalize" x-text="(doc.document_type || 'Unknown') + ' • ' + (doc.status.replace('_', ' '))"></span>
+                                                <div class="flex flex-col mb-2 p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition">
+                                                    <div class="flex items-center justify-between">
+                                                        <div class="flex flex-col">
+                                                            <span class="font-medium text-sm text-gray-900" x-text="doc.original_name"></span>
+                                                            <span class="text-xs text-gray-500 capitalize" x-text="(doc.document_type || 'Unknown') + ' • ' + (doc.status.replace('_', ' '))"></span>
+                                                        </div>
+                                                        <div class="flex gap-2 items-center">
+                                                            <button @click.stop="doc.showOcr = !doc.showOcr" class="text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-md border border-purple-100 transition">OCR</button>
+                                                            <button @click.stop="openShareModal(doc)" class="text-xs border border-gray-200 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 font-medium transition">Share</button>
+                                                            <button @click.stop="previewDocument(doc)" class="text-xs font-medium text-secondary hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 transition">Preview</button>
+                                                        </div>
                                                     </div>
-                                                    <button @click.stop="previewDocument(doc)" class="text-xs font-medium text-secondary hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 transition">Preview</button>
+                                                    <div x-show="doc.showOcr" class="mt-3 p-3 bg-gray-50 rounded border border-gray-200" x-transition>
+                                                        <div class="flex justify-between items-center mb-2">
+                                                            <h5 class="text-xs font-bold text-gray-700">Extracted OCR Text</h5>
+                                                            <button @click.stop="navigator.clipboard.writeText(doc.ocr_text); alert('Text copied to clipboard!')" class="text-xs bg-white border border-gray-300 text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition">Copy</button>
+                                                        </div>
+                                                        <pre class="text-xs text-gray-600 whitespace-pre-wrap font-mono" x-text="doc.ocr_text || 'No text extracted.'"></pre>
+                                                    </div>
                                                 </div>
                                             </template>
                                         </div>
@@ -519,31 +561,172 @@
                                     <span x-text="previewDoc?.original_name"></span>
                                     <span class="text-xs text-gray-500 font-normal" x-text="previewDoc?.document_type || 'Unknown Document'"></span>
                                 </h3>
-                                <button type="button" @click="previewModalOpen = false" class="text-gray-400 hover:text-gray-500 bg-white border border-gray-200 rounded-lg p-2 hover:bg-gray-50 transition">
-                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button x-show="previewDoc?.ocr_text" @click="navigator.clipboard.writeText(previewDoc.ocr_text); alert('Text copied to clipboard!')" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded border font-medium transition">
+                                        Copy Text
+                                    </button>
+                                    <button type="button" @click="previewModalOpen = false" class="text-gray-400 hover:text-gray-500 bg-white border border-gray-200 rounded-lg p-2 hover:bg-gray-50 transition">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="h-full pb-16">
-                                <template x-if="previewUrl">
-                                    <iframe :src="previewUrl" class="w-full h-full border-0 bg-gray-100"></iframe>
-                                </template>
+                            <div class="h-full pb-16 flex flex-col md:flex-row">
+                                <div class="flex-1 h-full border-r border-gray-200">
+                                    <template x-if="previewUrl">
+                                        <iframe :src="previewUrl" class="w-full h-full border-0 bg-gray-100"></iframe>
+                                    </template>
+                                </div>
+                                <div class="w-full md:w-1/3 p-4 overflow-y-auto h-full bg-white" x-show="previewDoc?.ocr_text">
+                                    <h4 class="font-bold text-gray-700 mb-2 border-b pb-2">Extracted Text</h4>
+                                    <pre class="text-sm text-gray-600 whitespace-pre-wrap font-mono" x-text="previewDoc?.ocr_text"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Share Modal -->
+                <div x-show="shareModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="share-title" role="dialog" aria-modal="true">
+                    <div class="flex items-center justify-center min-h-screen px-4">
+                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="shareModalOpen = false"></div>
+                        <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                            <h3 class="text-lg font-bold mb-4" id="share-title">Share Document</h3>
+                            
+                            <div x-show="!shareLink">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Expiration</label>
+                                <select x-model="shareDuration" class="w-full border rounded-lg px-3 py-2 mb-4">
+                                    <option value="1">1 Hour</option>
+                                    <option value="24">24 Hours</option>
+                                    <option value="72">3 Days</option>
+                                </select>
+                                
+                                <label class="flex items-center gap-2 mb-6 cursor-pointer">
+                                    <input type="checkbox" x-model="shareSingleUse" class="rounded text-secondary focus:ring-secondary">
+                                    <span class="text-sm text-gray-700">Single use only</span>
+                                </label>
+                                
+                                <div class="flex justify-end gap-3">
+                                    <button @click="shareModalOpen = false" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+                                    <button @click="generateShareLink()" class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Generate Link</button>
+                                </div>
+                            </div>
+                            
+                            <div x-show="shareLink">
+                                <p class="text-sm text-green-600 mb-4 font-medium">Link generated successfully!</p>
+                                <div class="flex items-center gap-2 mb-6">
+                                    <input type="text" readonly :value="shareLink" class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none">
+                                    <button @click="navigator.clipboard.writeText(shareLink); alert('Link copied to clipboard!')" class="px-3 py-2 bg-gray-100 border rounded-lg hover:bg-gray-200">Copy</button>
+                                </div>
+                                <div class="flex justify-end">
+                                    <button @click="shareModalOpen = false; shareLink = ''" class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Done</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+        
+            <!-- Admin Panel -->
+            <div x-show="currentPath === '/admin'" class="space-y-8" style="display: none;">
+                
+                <!-- Users Content -->
+                <div x-data="usersView()" x-init="initView()">
+            <header class="flex justify-between items-center mb-8">
+                <h2 class="text-2xl font-bold">User Management</h2>
+                <button @click="createModalOpen = true" class="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-medium">Create User</button>
+            </header>
+            
+            <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-50 text-gray-500 font-medium">
+                        <tr>
+                            <th class="px-6 py-4">Username</th>
+                            <th class="px-6 py-4">Role</th>
+                            <th class="px-6 py-4">Status</th>
+                            <th class="px-6 py-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <template x-for="user in users" :key="user.id">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 font-medium" x-text="user.username"></td>
+                                <td class="px-6 py-4"><span class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs" x-text="user.role"></span></td>
+                                <td class="px-6 py-4">
+                                    <span x-show="!user.is_disabled" class="text-green-600 font-medium text-xs">Active</span>
+                                    <span x-show="user.is_disabled" class="text-red-600 font-medium text-xs">Disabled</span>
+                                </td>
+                                <td class="px-6 py-4 text-right flex justify-end gap-2">
+                                    <button x-show="user.role !== 'admin'" @click="toggleStatus(user)" class="text-sm px-3 py-1 border rounded hover:bg-gray-50" x-text="user.is_disabled ? 'Enable' : 'Disable'"></button>
+                                    <button x-show="user.role !== 'admin'" @click="resetPassword(user)" class="text-sm px-3 py-1 border rounded hover:bg-gray-50 text-red-600">Reset Password</button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Create User Modal -->
+            <div x-show="createModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto">
+                <div class="flex items-center justify-center min-h-screen px-4">
+                    <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="createModalOpen = false"></div>
+                    <div class="relative bg-white rounded-2xl w-full max-w-sm p-6">
+                        <h3 class="text-lg font-bold mb-4">Create User</h3>
+                        <input type="text" x-model="newUser.username" placeholder="Username" class="w-full border rounded p-2 mb-3">
+                        <input type="password" x-model="newUser.password" placeholder="Password (min 6 chars)" class="w-full border rounded p-2 mb-4">
+                        <div class="flex justify-end gap-2">
+                            <button @click="createModalOpen = false" class="px-4 py-2 border rounded text-sm">Cancel</button>
+                            <button @click="createUser()" class="px-4 py-2 bg-secondary text-white rounded text-sm">Create</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+        </div>
+
+        <!-- Live Activity -->
+        <div x-data="activityView()" x-init="initView()" class="mt-12">
+            <header class="mb-8 flex justify-between items-center">
+                <h2 class="text-2xl font-bold flex items-center gap-2">
+                    Live Activity 
+                    <span class="relative flex h-3 w-3">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                </h2>
+                <button @click="logs = []" class="text-sm text-gray-500 hover:text-gray-700">Clear Logs</button>
+            </header>
+            
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                <div class="space-y-3 font-mono text-sm max-h-[70vh] overflow-y-auto">
+                    <template x-for="(log, i) in logs" :key="i">
+                        <div class="p-3 border-b last:border-0 border-gray-50 hover:bg-gray-50 flex items-start gap-3">
+                            <div class="text-xs text-gray-400 mt-0.5" x-text="new Date(log.timestamp).toLocaleTimeString()"></div>
+                            <div>
+                                <span class="font-bold text-gray-700" x-text="'User ' + log.user_id"></span>
+                                <span class="mx-2 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs" x-text="log.action"></span>
+                                <span class="text-gray-500 text-xs" x-text="JSON.stringify(log.details || {})"></span>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="logs.length === 0" class="text-gray-400 p-4 text-center">Waiting for activity...</div>
+                </div>
+            </div>
+                </div>
+            </div>
         </main>
+
     </div>
 
     <script>
         document.addEventListener('alpine:init', () => {
-            // Check session validity against the server on every page load.
-            // The UI never trusts its own state alone — all protected actions
-            // are still verified server-side.
             fetch('/api/ping').then(res => {
                 if (res.ok) {
-                    window.dispatchEvent(new CustomEvent('login-success'));
+                    res.json().then(data => {
+                        window.dispatchEvent(new CustomEvent('login-success', { detail: { role: data.role, username: data.username } }));
+                    });
                 }
             }).catch(() => {})
         })
@@ -564,10 +747,15 @@
                 body: JSON.stringify({ username: data.username, password: data.password })
             }).then(res => {
                 if (res.ok) {
-                    window.dispatchEvent(new CustomEvent('login-success'));
+                    // Fetch ping again to get role and username
+                    fetch('/api/ping').then(r => r.json()).then(d => {
+                        window.dispatchEvent(new CustomEvent('login-success', { detail: { role: d.role, username: d.username } }));
+                    });
                     data.error = '';
                 } else if (res.status === 429) {
                     data.error = 'Too many failed attempts. Please wait 15 minutes.';
+                } else if (res.status === 403) {
+                    data.error = 'Account is disabled';
                 } else {
                     data.error = 'Invalid credentials';
                 }
@@ -670,6 +858,9 @@
                 reviewCustomers: [],
                 reviewSelectedCustomer: null,
                 submittingReview: false,
+                previewModalOpen: false,
+                previewDoc: null,
+                previewUrl: null,
 
                 initView() {
                     this.$watch('currentPath', val => {
@@ -747,6 +938,11 @@
                 previewModalOpen: false,
                 previewDoc: null,
                 previewUrl: null,
+                shareModalOpen: false,
+                shareDoc: null,
+                shareDuration: '1',
+                shareSingleUse: false,
+                shareLink: '',
 
                 initView() {
                     this.$watch('currentPath', val => {
@@ -765,6 +961,34 @@
                     this.previewDoc = doc;
                     this.previewUrl = `/api/documents/${doc.id}/view`;
                     this.previewModalOpen = true;
+                },
+
+                openShareModal(doc) {
+                    this.shareDoc = doc;
+                    this.shareDuration = '1';
+                    this.shareSingleUse = false;
+                    this.shareLink = '';
+                    this.shareModalOpen = true;
+                },
+
+                generateShareLink() {
+                    fetch(`/api/documents/${this.shareDoc.id}/share`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            expires_in_hours: parseInt(this.shareDuration),
+                            single_use: this.shareSingleUse
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.token) {
+                            this.shareLink = window.location.origin + data.url;
+                        } else {
+                            alert("Failed to generate link");
+                        }
+                    })
+                    .catch(() => alert("Error generating link"));
                 }
             }
         }
@@ -819,6 +1043,96 @@
                     .finally(() => {
                         this.wiping = false;
                     });
+                }
+            }
+        }
+
+        function usersView() {
+            return {
+                users: [],
+                createModalOpen: false,
+                newUser: { username: '', password: '' },
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if(val === '/users') this.fetchUsers();
+                    });
+                    if(this.currentPath === '/users') this.fetchUsers();
+                },
+
+                fetchUsers() {
+                    fetch('/api/admin/users').then(r=>r.json()).then(d=>this.users = d||[]);
+                },
+
+                createUser() {
+                    fetch('/api/admin/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newUser)
+                    }).then(res => {
+                        if (res.ok) {
+                            this.createModalOpen = false;
+                            this.newUser = { username: '', password: '' };
+                            this.fetchUsers();
+                        } else {
+                            alert("Failed to create user");
+                        }
+                    });
+                },
+
+                toggleStatus(user) {
+                    fetch(`/api/admin/users/${user.id}/disable`, { method: 'POST' })
+                        .then(() => this.fetchUsers());
+                },
+
+                resetPassword(user) {
+                    const newPass = prompt(`Enter new password for ${user.username}:`);
+                    if (newPass && newPass.length >= 6) {
+                        fetch(`/api/admin/users/${user.id}/reset_password`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: newPass })
+                        }).then(r => {
+                            if (r.ok) alert("Password reset successfully");
+                            else alert("Failed to reset password");
+                        });
+                    } else if (newPass) {
+                        alert("Password must be at least 6 characters");
+                    }
+                }
+            }
+        }
+
+        function activityView() {
+            return {
+                logs: [],
+                eventSource: null,
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if(val === '/activity') this.connectSSE();
+                        else this.disconnectSSE();
+                    });
+                    if(this.currentPath === '/activity') this.connectSSE();
+                },
+
+                connectSSE() {
+                    if (this.eventSource) return;
+                    this.eventSource = new EventSource('/api/admin/logs/stream');
+                    this.eventSource.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            this.logs.unshift(data);
+                            if (this.logs.length > 200) this.logs.pop(); // limit display
+                        } catch(err) {}
+                    };
+                },
+
+                disconnectSSE() {
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
                 }
             }
         }

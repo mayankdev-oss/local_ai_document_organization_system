@@ -24,19 +24,35 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 		ProcessedToday int `json:"processed_today"`
 	}
 
-	err := database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1", userID).Scan(&stats.TotalDocuments)
+	role, _ := r.Context().Value(RoleKey).(string)
+	isAdmin := (role == "admin")
+
+	var err error
+	if isAdmin {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents").Scan(&stats.TotalDocuments)
+	} else {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1", userID).Scan(&stats.TotalDocuments)
+	}
 	if err != nil {
 		http.Error(w, "Failed to get total documents", http.StatusInternalServerError)
 		return
 	}
 
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM customers WHERE user_id = $1", userID).Scan(&stats.TotalCustomers)
+	if isAdmin {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers").Scan(&stats.TotalCustomers)
+	} else {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers WHERE user_id = $1", userID).Scan(&stats.TotalCustomers)
+	}
 	if err != nil {
 		http.Error(w, "Failed to get total customers", http.StatusInternalServerError)
 		return
 	}
 
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE", userID).Scan(&stats.ProcessedToday)
+	if isAdmin {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE DATE(created_at) = CURRENT_DATE").Scan(&stats.ProcessedToday)
+	} else {
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE", userID).Scan(&stats.ProcessedToday)
+	}
 	if err != nil {
 		http.Error(w, "Failed to get today's documents", http.StatusInternalServerError)
 		return
@@ -70,10 +86,20 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure this is an admin!
+	var role string
+	database.DB.QueryRow("SELECT role FROM users WHERE id = $1", userID).Scan(&role)
+	if role != "admin" {
+		http.Error(w, "Forbidden: Only admins can wipe data", http.StatusForbidden)
+		return
+	}
+
+	LogEvent(userID, "data_wipe_started", map[string]interface{}{"action": "wipe my data"})
+
 	// 1. Collect all file paths before deleting DB records
-	rows, err := database.DB.Query("SELECT filepath FROM documents WHERE user_id = $1", userID)
+	rows, err := database.DB.Query("SELECT filepath FROM documents")
 	if err != nil {
-		log.Printf("WipeDatabase: failed to fetch filepaths for user %d: %v", userID, err)
+		log.Printf("WipeDatabase: failed to fetch filepaths: %v", err)
 		http.Error(w, "Failed to initiate wipe", http.StatusInternalServerError)
 		return
 	}
@@ -94,18 +120,23 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("DELETE FROM audit_logs WHERE user_id = $1", userID); err != nil {
-		log.Printf("WipeDatabase: failed to delete audit_logs for user %d: %v", userID, err)
+	if _, err := tx.Exec("DELETE FROM document_shares"); err != nil {
+		log.Printf("WipeDatabase: failed to delete document_shares: %v", err)
+		http.Error(w, "Wipe failed during document_shares deletion", http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec("DELETE FROM audit_logs"); err != nil {
+		log.Printf("WipeDatabase: failed to delete audit_logs: %v", err)
 		http.Error(w, "Wipe failed during audit_logs deletion", http.StatusInternalServerError)
 		return
 	}
-	if _, err := tx.Exec("DELETE FROM documents WHERE user_id = $1", userID); err != nil {
-		log.Printf("WipeDatabase: failed to delete documents for user %d: %v", userID, err)
+	if _, err := tx.Exec("DELETE FROM documents"); err != nil {
+		log.Printf("WipeDatabase: failed to delete documents: %v", err)
 		http.Error(w, "Wipe failed during documents deletion", http.StatusInternalServerError)
 		return
 	}
-	if _, err := tx.Exec("DELETE FROM customers WHERE user_id = $1", userID); err != nil {
-		log.Printf("WipeDatabase: failed to delete customers for user %d: %v", userID, err)
+	if _, err := tx.Exec("DELETE FROM customers"); err != nil {
+		log.Printf("WipeDatabase: failed to delete customers: %v", err)
 		http.Error(w, "Wipe failed during customers deletion", http.StatusInternalServerError)
 		return
 	}
@@ -132,7 +163,8 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("WipeDatabase: user %d wiped — %d files deleted, %d skipped", userID, deleted, skipped)
+	log.Printf("WipeDatabase: System wiped — %d files deleted, %d skipped", deleted, skipped)
+	LogEvent(userID, "data_wipe_completed", map[string]interface{}{"files_deleted": deleted})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

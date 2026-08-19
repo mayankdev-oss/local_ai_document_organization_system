@@ -6,6 +6,8 @@ type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`
+	IsDisabled   bool      `json:"is_disabled"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -48,4 +50,13 @@ type ReviewRequest struct {
 	DOB              string `json:"dob"`
 	DocumentIDNumber string `json:"document_id_number"`
 	CustomerID       string `json:"customer_id"`
+}
+
+type DocumentShare struct {
+	Token      string    `json:"token"`
+	DocumentID int       `json:"document_id"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	SingleUse  bool      `json:"single_use"`
+	IsRevoked  bool      `json:"is_revoked"`
+	CreatedAt  time.Time `json:"created_at"`
 }

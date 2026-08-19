@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -18,13 +19,27 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := database.DB.Query(`
-		SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, c.name 
-		FROM documents d 
-		LEFT JOIN customers c ON d.customer_id = c.id 
-		WHERE d.user_id = $1
-		ORDER BY d.created_at DESC LIMIT 50
-	`, userID)
+	role, _ := r.Context().Value(RoleKey).(string)
+
+	var rows *sql.Rows
+	var err error
+
+	if role == "admin" {
+		rows, err = database.DB.Query(`
+			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
+			FROM documents d 
+			LEFT JOIN customers c ON d.customer_id = c.id 
+			ORDER BY d.created_at DESC LIMIT 100
+		`)
+	} else {
+		rows, err = database.DB.Query(`
+			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
+			FROM documents d 
+			LEFT JOIN customers c ON d.customer_id = c.id 
+			WHERE d.user_id = $1
+			ORDER BY d.created_at DESC LIMIT 50
+		`, userID)
+	}
 	if err != nil {
 		log.Printf("Failed to fetch documents: %v", err)
 		http.Error(w, "Failed to fetch documents", http.StatusInternalServerError)
@@ -42,7 +57,7 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 		var doc DocumentWithCustomer
 		if err := rows.Scan(
 			&doc.ID, &doc.Filename, &doc.OriginalName, &doc.Status,
-			&doc.DocumentType, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.CustomerName,
+			&doc.DocumentType, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.OCRText, &doc.CustomerName,
 		); err != nil {
 			http.Error(w, "Failed to parse document", http.StatusInternalServerError)
 			return
@@ -72,11 +87,22 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 	docID := vars["id"]
 
 	// Fetch filepath and verify ownership in one query
+	role, _ := r.Context().Value(RoleKey).(string)
+
 	var storedPath string
-	err := database.DB.QueryRow(
-		"SELECT filepath FROM documents WHERE id = $1 AND user_id = $2",
-		docID, userID,
-	).Scan(&storedPath)
+	var err error
+
+	if role == "admin" {
+		err = database.DB.QueryRow(
+			"SELECT filepath FROM documents WHERE id = $1",
+			docID,
+		).Scan(&storedPath)
+	} else {
+		err = database.DB.QueryRow(
+			"SELECT filepath FROM documents WHERE id = $1 AND user_id = $2",
+			docID, userID,
+		).Scan(&storedPath)
+	}
 	if err != nil {
 		http.Error(w, "Document not found or access denied", http.StatusNotFound)
 		return
@@ -100,6 +126,8 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+
+	LogEvent(userID, "document_viewed", map[string]interface{}{"document_id": docID})
 
 	// Serve inline for browser preview; X-Content-Type-Options is set by middleware
 	w.Header().Set("Content-Disposition", "inline")
